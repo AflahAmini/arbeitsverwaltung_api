@@ -2,12 +2,12 @@ process.env.NODE_ENV = 'test';
 
 const chai = require('chai');
 const chaiHttp = require('chai-http');
-const server = require('../src/server');
-const should = chai.should();
+const server = require('../server');
 
+chai.should();
 chai.use(chaiHttp);
 
-describe('POST /register', () => {
+describe('POST /api/register', () => {
 
     it('should register with correct details, and login immediately', (done) => {
         const user = {
@@ -16,7 +16,7 @@ describe('POST /register', () => {
             passwordConfirmation: "a testing password"
         };
         chai.request(server)
-            .post('/register')
+            .post('/api/register')
             .send(user)
             .end((err, res) => {
                 res.should.have.status(200);
@@ -46,7 +46,7 @@ describe('POST /register', () => {
             passwordConfirmation: "nother password"
         };
         chai.request(server)
-            .post('/register')
+            .post('/api/register')
             .send(user)
             .end((err, res) => {
                 res.should.have.status(200);
@@ -69,7 +69,7 @@ describe('POST /register', () => {
 
 });
 
-describe('POST /login', () => {
+describe('POST /api/login', () => {
 
     before((done) => {
         const user = {
@@ -79,7 +79,7 @@ describe('POST /login', () => {
         };
 
         chai.request(server)
-            .post('/register')
+            .post('/api/register')
             .send(user)
             .then(() => {
                 done();
@@ -93,7 +93,7 @@ describe('POST /login', () => {
         }
 
         chai.request(server)
-            .post('/login')
+            .post('/api/login')
             .send(creds)
             .end((err, res) => {
                 res.should.have.status(200);
@@ -123,7 +123,7 @@ describe('POST /login', () => {
         };
 
         chai.request(server)
-            .post('/login')
+            .post('/api/login')
             .send(creds)
             .end((err, res) => {
                 res.should.have.status(200);
@@ -142,9 +142,9 @@ describe('POST /login', () => {
             });
     });
 
-})
+});
 
-describe('POST /refresh-token', () => {
+describe('POST /api/refresh-token', () => {
 
     // Access and refresh token variables
     let tokens = {};
@@ -157,7 +157,7 @@ describe('POST /refresh-token', () => {
         };
 
         chai.request(server)
-            .post('/register')
+            .post('/api/register')
             .send(user)
             .end((err, res) => {
                 tokens.ac = res.body.accessToken;
@@ -171,7 +171,7 @@ describe('POST /refresh-token', () => {
         // 1000 ms delay is intentional during tests to avoid similar tokens
         setTimeout(() => {
             chai.request(server)
-                .post('/refresh-token')
+                .post('/api/refresh-token')
                 .send({ refreshToken: tokens.rf })
                 .end((err, res) => {
                     res.should.have.status(200);
@@ -196,14 +196,16 @@ describe('POST /refresh-token', () => {
 
     it('returns an error if an invalid refresh token is given', (done) => {
         chai.request(server)
-            .post('/refresh-token')
+            .post('/api/refresh-token')
             .send({ refreshToken: "abc123" })
             .end((err, res) => {
                 res.should.have.status(403);
                 
-                res.body.should.have.property('msg');
-                res.body.msg.should.be.a('string');
-                res.body.msg.should.not.be.empty;
+                res.body.should.have.property('success');
+                res.body.should.have.property('message');
+                res.body.success.should.be.false;
+                res.body.message.should.be.a('string');
+                res.body.message.should.not.be.empty;
 
                 done();
             });
@@ -212,7 +214,7 @@ describe('POST /refresh-token', () => {
     it('returns an error if an expired refresh token is given', (done) => {
         setTimeout(() => {
             chai.request(server)
-                .post('/refresh-token')
+                .post('/api/refresh-token')
                 .send({ refreshToken: tokens.rf })
                 .end((err, res) => {
                     res.should.have.status(200);
@@ -223,14 +225,16 @@ describe('POST /refresh-token', () => {
                     
         setTimeout(() => {
             chai.request(server)
-                .post('/refresh-token')
+                .post('/api/refresh-token')
                 .send({ refreshToken: tokens.rf })
                 .end((err, res) => {
                     res.should.have.status(403);
 
-                    res.body.should.have.property('msg');
-                    res.body.msg.should.be.a('string');
-                    res.body.msg.should.not.be.empty;
+                    res.body.should.have.property('success');
+                    res.body.should.have.property('message');
+                    res.body.success.should.be.false;
+                    res.body.message.should.be.a('string');
+                    res.body.message.should.not.be.empty;
 
                     done();
                 });
@@ -239,7 +243,60 @@ describe('POST /refresh-token', () => {
 
 });
 
-describe('GET /auth-test', () => {
+describe('GET /api/logout', () => {
+
+    // Access and refresh token variables
+    let tokens = {};
+
+    before((done) => {
+        const user = {
+            email: "logouttest@example.com",
+            password: "password",
+            passwordConfirmation: "password"
+        };
+
+        chai.request(server)
+            .post('/api/register')
+            .send(user)
+            .end((err, res) => {
+                tokens.ac = res.body.accessToken;
+                tokens.rf = res.body.refreshToken;
+
+                done();
+            });
+    });
+
+    it('logs out a user, then a token refresh attempt should be forbidden', (done) => {
+        chai.request(server)
+            .get('/api/logout')
+            .set('Authorization', 'Bearer ' + tokens.ac)
+            .end((err, res) => {
+                res.should.have.status(200);
+
+                res.body.should.have.property('success');
+                res.body.success.should.be.true;
+
+                done();
+            });
+
+        setTimeout(() => {
+            chai.request(server)
+            .post('/api/refresh-token')
+            .send({ refreshToken: tokens.rf })
+            .end((err, res) => {
+                res.should.have.status(403);
+                
+                res.body.should.have.property('success');
+                res.body.success.should.be.false;
+
+                done();
+            });
+        }, 1000);
+    });
+
+});
+
+describe('GET /api/auth-test', () => {
     // Access and refresh token variables
     let tokens = {};
 
@@ -251,7 +308,7 @@ describe('GET /auth-test', () => {
         };
 
         chai.request(server)
-            .post('/register')
+            .post('/api/register')
             .send(user)
             .end((err, res) => {
                 tokens.ac = res.body.accessToken;
@@ -263,7 +320,7 @@ describe('GET /auth-test', () => {
 
     it('allows requests with a valid access token in the header', (done) => {
         chai.request(server)
-            .get('/auth-test')
+            .get('/api/auth-test')
             .set('Authorization', 'Bearer ' + tokens.ac)
             .end((err, res) => {
                 res.should.have.status(200);
@@ -277,7 +334,7 @@ describe('GET /auth-test', () => {
 
     it('disallows requests without an access token', (done) => {
         chai.request(server)
-            .get('/auth-test')
+            .get('/api/auth-test')
             .end((err, res) => {
                 res.should.have.status(401);
                 done();
@@ -286,7 +343,7 @@ describe('GET /auth-test', () => {
 
     it('disallows requets with an invalid/expired access token', (done) => {
         chai.request(server)
-            .get('/auth-test')
+            .get('/api/auth-test')
             .set('Authorization', 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjp7ImlkIjo1LCJlbWFpbCI6InJlZnJlc2h0ZXN0QGV4YW1wbGUuY29tIn0sImlhdCI6MTYwODgzNzQxNSwiZXhwIjoxNjA4ODM4MzE1fQ.6VGz0DcAC_2_4mdDwL-n-ANLLl2yT7xPNXCum7_xjcc')
             .end((err, res) => {
                 res.should.have.status(401);
