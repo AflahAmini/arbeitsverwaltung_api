@@ -20,8 +20,17 @@ try {
 
     db.prepare(`CREATE TABLE refresh (
         id INTEGER PRIMARY KEY,
-        userId int,
+        userId INTEGER,
         refreshToken text
+        )`).run();
+
+    db.prepare(`CREATE TABLE sessions (
+        id INTEGER PRIMARY KEY,
+        userId INTEGER,
+        weekYear text,
+        dayOfWeek INTEGER,
+        activeDuration INTEGER,
+        inactiveDuration INTEGER
         )`).run();
 
     const insert = db.prepare('INSERT INTO users (email, password, created_at) VALUES (?, ?, ?)');

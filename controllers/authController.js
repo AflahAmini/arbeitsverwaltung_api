@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const database = require('./dbController');
-const { responseObj } = require('../utils/response');
+const { responseObj, errorObj } = require('../utils/response');
 const { svr_logger } = require('../utils/logger');
 
 const email_regex = /^(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*|"(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21\x23-\x5b\x5d-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])*")@(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?|\[(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?|[a-z0-9-]*[a-z0-9]:(?:[\x01-\x08\x0b\x0c\x0e-\x1f\x21-\x5a\x53-\x7f]|\\[\x01-\x09\x0b\x0c\x0e-\x7f])+)\])$/;
@@ -11,16 +11,17 @@ const email_regex = /^(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{
 function register(req, res) {
     const user = req.body;
 
-    tryRegister(user).then( response => {
-        if (response.success) {
-            svr_logger.info(`User ${response.message.email} registered successfully with id ${response.message.id}.`);
-            res.redirect(307, '/api/login');
-        }
-        else 
-            res.json(response);
+    tryRegister(user).then( addedUser => {
+        svr_logger.info(`User ${addedUser.email} registered successfully with id ${addedUser.id}.`);
+        res.redirect(307, '/api/login');
+
     }).catch(err => {
-        svr_logger.error(err);
-        res.sendStatus(501);
+        if (err.constructor != Error) {
+            svr_logger.error(err);
+            throw err;
+        }
+        
+        res.status(400).json(errorObj(err.message));
     });
 }
 
@@ -28,31 +29,32 @@ function register(req, res) {
 function login(req, res) {
     const user = req.body;
 
-    tryAuthenticate(user).then( response => {
-        if (response.success) {
-            svr_logger.info(`User ${response.message.email} logged in successfully.`);
-            
-            // Response message should equal the user object now
-            const accessToken = getAccessToken(response.message);
-            const refreshToken = getRefreshToken(response.message);
+    tryAuthenticate(user).then( loggedInUser => {
+        svr_logger.info(`User ${loggedInUser.email} logged in successfully.`);
+        
+        const response = responseObj("Logged in successfully!");
 
-            response.accessToken = accessToken;
-            response.refreshToken = refreshToken;
-        }
+        // User should be in the form of { id, email }
+        response.accessToken = getAccessToken(loggedInUser);
+        response.refreshToken = getRefreshToken(loggedInUser);
         
         res.json(response);
     }).catch(err => {
-        svr_logger.error(err);
-        res.sendStatus(501);
+        if (err.constructor != Error){
+            svr_logger.error(err);
+            throw err;    
+        }
+
+        res.status(401).json(errorObj(err.message));
     });
 }
 
 // Middleware, logs the user out, deleting the corresponding refresh key in the process.
 function logout(req, res) {
-    database.dbDeleteTokensById(req.user.id);
+    database.refreshTable.deleteById(req.user.id);
 
     svr_logger.info(`User ${req.user.email} logged out successfully.`);
-    res.json(responseObj(true, "Logged out successfully!"));
+    res.json(responseObj("Logged out successfully!"));
 }
 
 // Middleware that parses the token using the secret, gets the user object from it
@@ -62,7 +64,7 @@ function authenticateToken(req, res, next) {
     const authHeader = req.headers.authorization;
 
     if (!authHeader) {
-        return res.status(401).json( responseObj(false, 'Token is invalid') );
+        return res.status(401).json( errorObj('Token is invalid') );
     }
 
     verifyToken(authHeader)
@@ -70,7 +72,7 @@ function authenticateToken(req, res, next) {
             req.user = user;
             next();
         }).catch(err => {
-            return res.status(401).json( responseObj(false, err) );
+            return res.status(401).json( errorObj(err.message) );
         });
 }
 
@@ -80,17 +82,17 @@ function refreshToken(req, res) {
     let user = {};
 
     if (!token)
-        return res.status(403).json(responseObj(false, "Access is forbidden."));
+        return res.status(403).json(errorObj("Access is forbidden."));
 
     try {
         const decoded = jwt.verify(token, process.env.SECRET);
 
-        user = database.dbGetUserBy('id', decoded.user.id);
+        user = database.usersTable.get('id', decoded.user.id);
         if (!user) {
             throw new Error('Access is forbidden');
         }
 
-        const existingRefreshToken = database.dbGetTokenBy('userId', user.id);
+        const existingRefreshToken = database.refreshTable.get('userId', user.id);
         if (!existingRefreshToken) {
             throw new Error('Access is forbidden');
         } else if  (existingRefreshToken.refreshToken !== token) {
@@ -99,7 +101,7 @@ function refreshToken(req, res) {
 
     } catch (err) {
         const message = (err && err.message) || err;
-        return res.status(403).json(responseObj(false, message));
+        return res.status(403).json(errorObj(message));
     }
 
     const payload = {
@@ -110,14 +112,14 @@ function refreshToken(req, res) {
     const newRefreshToken = jwt.sign({ user: payload }, process.env.SECRET, { expiresIn: process.env.REFRESH_TOKEN_LIFE });
     const newAccessToken = getAccessToken(payload);
 
-    database.dbUpdateToken(token, newRefreshToken);
+    database.refreshTable.update(token, newRefreshToken);
 
     svr_logger.info(`Session refreshed for user of id ${user.id}`);
 
-    let response = responseObj(true, "");
-    response.accessToken = newAccessToken;
-    response.refreshToken = newRefreshToken;
-    res.json(response);
+    res.json({
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken
+    });
 }
 
 // Manual verification of the token, useful for client auth for web sockets
@@ -145,33 +147,31 @@ function verifyToken(token) {
 // awaits a response JSON ( required : email, password, passwordConfirmation )
 async function tryRegister(user) {
     if (user.email === undefined || user.password === undefined || user.passwordConfirmation === undefined)
-        return responseObj(false, "API Error - expected fields are undefined!");
+        throw new Error("API Error - expected fields are undefined!");
 
     if (!email_regex.test(user.email)) 
-        return responseObj(false, "Invalid email format!");
+        throw new Error("Invalid email format!");
 
     if (user.password.length < 8)
-        return responseObj(false, "Password must be at least 8 characters long!")
+        throw new Error("Password must be at least 8 characters long!")
 
     if (user.password != user.passwordConfirmation)
-        return responseObj(false, "Passwords do not match!");
+        throw new Error("Passwords do not match!");
 
     // Waits until the hash is generated
     const passwordHash = await bcrypt.hash(user.password, await bcrypt.genSalt(10))
                         .catch(err =>  {
                             svr_logger.error(err);
-                            return responseObj(false, "authenticate", "Seems to be something wrong on our side.")
+                            throw new Error("Seems to be something wrong on our side.")
                         });
 
     try {
         const entry = { email: user.email, password: passwordHash };
 
-        // Throws error if there is already a user with the same email
-        const addedUser = database.dbAddUser(entry);
-
-        return responseObj(true, addedUser);
+        // Throws an error if there is already a user with the same email
+        return database.usersTable.add(entry); 
     } catch (err) {
-        return responseObj(false, "Email already exists!");
+        throw new Error("Email already exists!");
     }
 }
 
@@ -179,23 +179,23 @@ async function tryRegister(user) {
 // ( required params : email, password )
 async function tryAuthenticate(user) {
     if (user.email === undefined || user.password === undefined)
-        return responseObj(false, "API Error - expected fields are undefined!");
+        throw new Error("API Error - expected fields are undefined!");
 
-    userFromDb = database.dbGetUserBy('email', user.email);
+    userFromDb = database.usersTable.get('email', user.email);
 
     if (userFromDb) {
         // Waits until the comparison has been made
         const passwordMatches = await bcrypt.compare(user.password, userFromDb.password)
         .catch(err =>  {
             svr_logger.error(err);
-            return responseObj(false, "Seems to be something wrong on our side.")
+            throw new Error("Seems to be something wrong on our side.")
         });
 
         if (passwordMatches)
-            return responseObj(true, { id: userFromDb.id, email: userFromDb.email});
+            return { id: userFromDb.id, email: userFromDb.email };
     }
 
-    return responseObj(false, "Email and/or password is incorrect!");
+    throw new Error("Email and/or password is incorrect!");
 }
 
 // Generates a short-living access token
@@ -206,10 +206,10 @@ function getAccessToken(payload) {
 // Generates a long-living refresh token, and adds it to the database
 function getRefreshToken(payload) {
     // Deletes any existing refresh tokens corresponding with the user (capping the session amount to 1 per user)
-    database.dbDeleteTokensById(payload.id);
+    database.refreshTable.deleteById(payload.id);
 
     const refreshToken = jwt.sign({ user: payload }, process.env.SECRET, { expiresIn: process.env.REFRESH_TOKEN_LIFE });
-    database.dbAddToken(payload.id, refreshToken);
+    database.refreshTable.add(payload.id, refreshToken);
     
     return refreshToken;
 }

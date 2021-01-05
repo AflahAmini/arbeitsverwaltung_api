@@ -22,14 +22,12 @@ describe('POST /api/register', () => {
                 res.should.have.status(200);
 
                 // Property checks
-                res.body.should.have.property('success');
                 res.body.should.have.property('message');
                 res.body.should.have.property('accessToken');
                 res.body.should.have.property('refreshToken');
 
                 // Property value and type checks
-                res.body.success.should.be.true;
-                res.body.message.should.be.a('object');
+                res.body.message.should.be.a('string');
                 res.body.accessToken.should.be.a('string');
                 res.body.accessToken.should.not.be.empty;
                 res.body.refreshToken.should.be.a('string');
@@ -49,19 +47,15 @@ describe('POST /api/register', () => {
             .post('/api/register')
             .send(user)
             .end((err, res) => {
-                res.should.have.status(200);
-                ;
+                res.should.have.status(400);
 
                 // Property checks
-                res.body.should.have.property('success');
-                res.body.should.have.property('message');
+                res.body.should.have.property('error');
                 res.body.should.not.have.property('accessToken');
                 res.body.should.not.have.property('refreshToken');
 
                 // Property value and type checks
-                res.body.success.should.be.false;
-                res.body.message.should.be.a('string');
-                res.body.message.should.not.be.empty;
+                res.body.error.should.be.a('string');
 
                 done();
             });
@@ -72,18 +66,7 @@ describe('POST /api/register', () => {
 describe('POST /api/login', () => {
 
     before((done) => {
-        const user = {
-            email: "logintest@example.com",
-            password: "password",
-            passwordConfirmation: "password"
-        };
-
-        chai.request(server)
-            .post('/api/register')
-            .send(user)
-            .then(() => {
-                done();
-            });
+        registerHelper("logintest@example.com", "password", {}, done);
     });
 
     it('should login with correct credentials', (done) => {
@@ -99,14 +82,12 @@ describe('POST /api/login', () => {
                 res.should.have.status(200);
 
                 // Property checks
-                res.body.should.have.property('success');
                 res.body.should.have.property('message');
                 res.body.should.have.property('accessToken');
                 res.body.should.have.property('refreshToken');
 
                 // Property value and type checks
-                res.body.success.should.be.true;
-                res.body.message.should.be.a('object');
+                res.body.message.should.be.a('string');
                 res.body.accessToken.should.be.a('string');
                 res.body.accessToken.should.not.be.empty;
                 res.body.refreshToken.should.be.a('string');
@@ -126,17 +107,15 @@ describe('POST /api/login', () => {
             .post('/api/login')
             .send(creds)
             .end((err, res) => {
-                res.should.have.status(200);
+                res.should.have.status(401);
 
                 // Property checks
-                res.body.should.have.property('success');
-                res.body.should.have.property('message');
+                res.body.should.have.property('error');
                 res.body.should.not.have.property('accessToken');
                 res.body.should.not.have.property('refreshToken');
 
                 // Property value and type checks
-                res.body.success.should.be.false;
-                res.body.message.should.be.a('string');
+                res.body.error.should.be.a('string');
 
                 done();
             });
@@ -150,21 +129,7 @@ describe('POST /api/refresh-token', () => {
     let tokens = {};
 
     before((done) => {
-        const user = {
-            email: "refreshtest@example.com",
-            password: "password",
-            passwordConfirmation: "password"
-        };
-
-        chai.request(server)
-            .post('/api/register')
-            .send(user)
-            .end((err, res) => {
-                tokens.ac = res.body.accessToken;
-                tokens.rf = res.body.refreshToken;
-
-                done();
-            });
+        registerHelper("refreshtest@example.com", "password", tokens, done);
     });
 
     it('returns a new different set of tokens given the refresh token', (done) => {
@@ -201,11 +166,9 @@ describe('POST /api/refresh-token', () => {
             .end((err, res) => {
                 res.should.have.status(403);
                 
-                res.body.should.have.property('success');
-                res.body.should.have.property('message');
-                res.body.success.should.be.false;
-                res.body.message.should.be.a('string');
-                res.body.message.should.not.be.empty;
+                res.body.should.have.property('error');
+                res.body.error.should.be.a('string');
+                res.body.error.should.not.be.empty;
 
                 done();
             });
@@ -229,12 +192,10 @@ describe('POST /api/refresh-token', () => {
                 .send({ refreshToken: tokens.rf })
                 .end((err, res) => {
                     res.should.have.status(403);
-
-                    res.body.should.have.property('success');
-                    res.body.should.have.property('message');
-                    res.body.success.should.be.false;
-                    res.body.message.should.be.a('string');
-                    res.body.message.should.not.be.empty;
+                    
+                    res.body.should.have.property('error');
+                    res.body.error.should.be.a('string');
+                    res.body.error.should.not.be.empty;
 
                     done();
                 });
@@ -249,21 +210,7 @@ describe('GET /api/logout', () => {
     let tokens = {};
 
     before((done) => {
-        const user = {
-            email: "logouttest@example.com",
-            password: "password",
-            passwordConfirmation: "password"
-        };
-
-        chai.request(server)
-            .post('/api/register')
-            .send(user)
-            .end((err, res) => {
-                tokens.ac = res.body.accessToken;
-                tokens.rf = res.body.refreshToken;
-
-                done();
-            });
+        registerHelper("logouttest@example.com", "password", tokens, done);
     });
 
     it('logs out a user, then a token refresh attempt should be forbidden', (done) => {
@@ -273,8 +220,8 @@ describe('GET /api/logout', () => {
             .end((err, res) => {
                 res.should.have.status(200);
 
-                res.body.should.have.property('success');
-                res.body.success.should.be.true;
+                res.body.should.have.property('message');
+                res.body.message.should.be.a('string');
 
                 done();
             });
@@ -285,9 +232,6 @@ describe('GET /api/logout', () => {
             .send({ refreshToken: tokens.rf })
             .end((err, res) => {
                 res.should.have.status(403);
-                
-                res.body.should.have.property('success');
-                res.body.success.should.be.false;
 
                 done();
             });
@@ -301,21 +245,7 @@ describe('GET /api/auth-test', () => {
     let tokens = {};
 
     before((done) => {
-        const user = {
-            email: "authtest@example.com",
-            password: "password",
-            passwordConfirmation: "password"
-        };
-
-        chai.request(server)
-            .post('/api/register')
-            .send(user)
-            .end((err, res) => {
-                tokens.ac = res.body.accessToken;
-                tokens.rf = res.body.refreshToken;
-
-                done();
-            });
+        registerHelper("authtest@example.com", "password", tokens, done);
     });
 
     it('allows requests with a valid access token in the header', (done) => {
@@ -324,9 +254,6 @@ describe('GET /api/auth-test', () => {
             .set('Authorization', 'Bearer ' + tokens.ac)
             .end((err, res) => {
                 res.should.have.status(200);
-
-                res.body.should.have.property('success');
-                res.body.success.should.be.true;
 
                 done();
             });
@@ -352,3 +279,22 @@ describe('GET /api/auth-test', () => {
             });
     })
 });
+
+// Helper function for any methods requiring authentication
+function registerHelper(email, password, tokensObj, done) {
+    const user = {
+        email: email,
+        password: password,
+        passwordConfirmation: password
+    };
+
+    chai.request(server)
+        .post('/api/register')
+        .send(user)
+        .end((err, res) => {
+            tokensObj.ac = res.body.accessToken;
+            tokensObj.rf = res.body.refreshToken;
+
+            done();
+        });
+}

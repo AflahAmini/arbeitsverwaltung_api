@@ -7,9 +7,9 @@ Enjoy this mess from a beginner.
 
 ## Introduction
 
-Before starting the server, make sure an empty db folder is present and run `npm install`. Then run `npm run start` to launch the server.
+Before starting the server, make sure an empty db folder is present and run `npm install`. Then create a config.env file in the config folder and place all the necessary variables there (notably PORT, SECRET, ACCESS_TOKEN_LIFE and REFRESH_TOKEN_LIFE). Then run `npm run start` to launch the server.
 
-This API always sends out responses in JSON format and also expects POST requests with JSON in the request bodies (unless specified). Bad requests should also return a JSON object with the error message. By default, unrouted paths would always return a 404.
+This API always sends out responses in JSON format and also expects POST requests with JSON in the request bodies (unless specified). By default, unrouted paths would always return a 404.
 
 In the usage section below, routes are denoted firstly by the HTTP verb (like GET, POST, PUT), then followed by the path. POST requests have the 'expects' part, which only contain the required properties of the JSON object to be sent in with the POST request. Any other property would be ignored. For example, if a POST route expects *"email: string, password: string"*, then the JSON object attached with the request should be : 
 
@@ -22,14 +22,11 @@ In the usage section below, routes are denoted firstly by the HTTP verb (like GE
 
 Some routes require authorization via the 'Authorization' header. This can be denoted with *(auth)* at the end of the route name listed below. These routes require an access token in the 'Authorization' header of the request to be processed.
 
-Responses would change later on in the future to be more standardized.
-
-A failed/error response should always be in this format :
+A failed/error response should always have a status code other than 200 and be in this format :
 
 ```
 {
-    "success": false,
-    "message": [error message]
+    "error": [error message]
 }
 ```
 
@@ -39,7 +36,7 @@ A failed/error response should always be in this format :
 **Returns** -
 ```
 {
-    "message": "Ok"
+    "message": "Okay"
 }
 ```
 
@@ -49,8 +46,7 @@ A failed/error response should always be in this format :
 **Returns**
 ```
 {
-    "success": true,
-    "message": [the user object with id],
+    "message": "Logged in successfully!",
     "accessToken": [a long string],
     "refreshToken": [a long string]
 }
@@ -65,7 +61,6 @@ A failed/error response should always be in this format :
 **Returns**
 ```
 {
-    "success": true,
     "message": "Logged out successfully!"
 }
 ```
@@ -74,7 +69,6 @@ A failed/error response should always be in this format :
 **Returns**
 ```
 {
-    "success": true,
     "message": "You are authenticated!"
 }
 ```
@@ -85,8 +79,6 @@ A failed/error response should always be in this format :
 **Returns** 
 ```
 {
-    "success": true,
-    "message": "",
     "accessToken": [a long string, different to the current access token],
     "refreshToken": [a long string, also different]
 }
