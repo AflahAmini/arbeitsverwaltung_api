@@ -18,4 +18,13 @@ function getWeekYearAndDay(date) {
             dayNumber];
 }
 
-module.exports = getWeekYearAndDay;
+// A valid week year should be in the form of ww-yyyy
+function isValidWeekYear(weekYear) {
+    const regex = /^\d{2}-\d{4}$/;
+    return regex.test(weekYear);
+}
+
+module.exports = {
+    getWeekYearAndDay,
+    isValidWeekYear
+}

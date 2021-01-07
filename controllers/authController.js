@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const fs = require('fs');
 
 const database = require('./dbController');
 const { responseObj, errorObj } = require('../utils/response');
@@ -13,6 +14,14 @@ function register(req, res) {
 
     tryRegister(user).then( addedUser => {
         svr_logger.info(`User ${addedUser.email} registered successfully with id ${addedUser.id}.`);
+
+        const filesPath = process.env.NODE_ENV === 'test' ? './filesTest' : './files';
+        fs.mkdir(`${filesPath}/${addedUser.id}`, { recursive: true }, (err) => {
+            if (err)
+                throw err;
+            svr_logger.info(`Folder created for user ${addedUser.id}`);
+        });
+
         res.redirect(307, '/api/login');
 
     }).catch(err => {
@@ -33,6 +42,7 @@ function login(req, res) {
         svr_logger.info(`User ${loggedInUser.email} logged in successfully.`);
         
         const response = responseObj("Logged in successfully!");
+        response.id = loggedInUser.id;
 
         // User should be in the form of { id, email }
         response.accessToken = getAccessToken(loggedInUser);

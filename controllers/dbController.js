@@ -9,6 +9,8 @@ const refreshDeleteByUserId = db.prepare('DELETE FROM refresh WHERE userId = ?')
 
 const sessionsSelect = db.prepare(`SELECT * FROM sessions 
                                     WHERE userId = ? AND weekYear = ? AND dayOfWeek = ?`);
+const sessionsSelectWeekYear = db.prepare(`SELECT * FROM sessions 
+                                            WHERE userId = ? AND weekYear = ?`);
 const sessionsInsert = db.prepare(`INSERT INTO sessions 
                                     (userId, weekYear, dayOfWeek, activeDuration, inactiveDuration)
                                     VALUES
@@ -67,6 +69,11 @@ const sessionsTable = {
     // Just gets the session entry (undefined if it does not exist)
     getSession: (userId, weekYear, dayOfWeek) => {
         return sessionsSelect.get(userId, weekYear, dayOfWeek);
+    },
+
+    // Gets all the sessions in the week-year for that user
+    getSessionsByWeekYear: (userId, weekYear) => {
+        return sessionsSelectWeekYear.all(userId, weekYear);
     },
 
     // Updates the session entry in the database

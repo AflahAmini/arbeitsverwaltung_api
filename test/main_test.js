@@ -3,11 +3,16 @@ process.env.NODE_ENV = 'test';
 const chai = require('chai');
 const chaiHttp = require('chai-http');
 const server = require('../server');
+const helper = require('./test_helper');
 
 chai.should();
 chai.use(chaiHttp);
 
 describe('POST /api/register', () => {
+
+    before(async () => {
+        await helper.clearFilesTest();
+    });
 
     it('should register with correct details, and login immediately', (done) => {
         const user = {
@@ -23,15 +28,20 @@ describe('POST /api/register', () => {
 
                 // Property checks
                 res.body.should.have.property('message');
+                res.body.should.have.property('id');
                 res.body.should.have.property('accessToken');
                 res.body.should.have.property('refreshToken');
 
                 // Property value and type checks
                 res.body.message.should.be.a('string');
+                res.body.id.should.be.a('number');
                 res.body.accessToken.should.be.a('string');
                 res.body.accessToken.should.not.be.empty;
                 res.body.refreshToken.should.be.a('string');
                 res.body.refreshToken.should.not.be.empty;
+                
+                // There should exist a folder under filesTest
+                helper.checkIfDirectoryExists(`filesTest/${res.body.id}`).should.be.true;
 
                 done();
             });
@@ -66,7 +76,7 @@ describe('POST /api/register', () => {
 describe('POST /api/login', () => {
 
     before((done) => {
-        registerHelper("logintest@example.com", "password", {}, done);
+        helper.registerHelper("logintest@example.com", "password", {}, done);
     });
 
     it('should login with correct credentials', (done) => {
@@ -129,7 +139,7 @@ describe('POST /api/refresh-token', () => {
     let tokens = {};
 
     before((done) => {
-        registerHelper("refreshtest@example.com", "password", tokens, done);
+        helper.registerHelper("refreshtest@example.com", "password", tokens, done);
     });
 
     it('returns a new different set of tokens given the refresh token', (done) => {
@@ -210,7 +220,7 @@ describe('GET /api/logout', () => {
     let tokens = {};
 
     before((done) => {
-        registerHelper("logouttest@example.com", "password", tokens, done);
+        helper.registerHelper("logouttest@example.com", "password", tokens, done);
     });
 
     it('logs out a user, then a token refresh attempt should be forbidden', (done) => {
@@ -222,8 +232,6 @@ describe('GET /api/logout', () => {
 
                 res.body.should.have.property('message');
                 res.body.message.should.be.a('string');
-
-                done();
             });
 
         setTimeout(() => {
@@ -245,7 +253,7 @@ describe('GET /api/auth-test', () => {
     let tokens = {};
 
     before((done) => {
-        registerHelper("authtest@example.com", "password", tokens, done);
+        helper.registerHelper("authtest@example.com", "password", tokens, done);
     });
 
     it('allows requests with a valid access token in the header', (done) => {
@@ -280,21 +288,130 @@ describe('GET /api/auth-test', () => {
     })
 });
 
-// Helper function for any methods requiring authentication
-function registerHelper(email, password, tokensObj, done) {
-    const user = {
-        email: email,
-        password: password,
-        passwordConfirmation: password
-    };
+describe('/api/sessions/', () => {
+    let tokens = {};
 
-    chai.request(server)
-        .post('/api/register')
-        .send(user)
-        .end((err, res) => {
-            tokensObj.ac = res.body.accessToken;
-            tokensObj.rf = res.body.refreshToken;
+    before((done) => {
+        helper.registerHelper("sessionstest@example.com", "password", tokens, done);
+    });
 
-            done();
+    describe('POST', () => {
+
+        it('adds a session into the database if the session is unavailable', (done) => {
+            chai.request(server)
+                .post('/api/sessions')
+                .send({ "date": "2023-05-01" })
+                .set('Authorization', 'Bearer ' + tokens.ac)
+                .end((err, res) => {
+                    res.should.have.status(200);
+                    res.body.should.be.a('object');
+
+                    res.body.should.have.property('session');
+                    res.body.session.should.be.a('object');
+                    
+                    res.body.session.should.have.property('weekYear');
+                    res.body.session.should.have.property('dayOfWeek')
+                    res.body.session.should.have.property('activeDuration');
+                    res.body.session.should.have.property('inactiveDuration');
+
+                    res.body.session.weekYear.should.eql('18-2023');
+                    res.body.session.dayOfWeek.should.eql(1);
+                    res.body.session.activeDuration.should.eql(0);
+                    res.body.session.inactiveDuration.should.eql(0);
+
+                    done();
+                });
         });
-}
+
+    });
+
+    describe('PUT', () => {
+
+        it('updates the session in the database', async () => {
+            await chai.request(server)
+                        .post('/api/sessions')
+                        .send({ "date": "2023-05-02" })
+                        .set('Authorization', 'Bearer ' + tokens.ac);            
+
+            const res1 = await chai.request(server)
+                                    .put('/api/sessions')
+                                    .send({ 
+                                        "date": "2023-05-02",
+                                        "activeDuration": 123,
+                                        "inactiveDuration": 456
+                                    })
+                                    .set('Authorization', 'Bearer ' + tokens.ac);
+
+            res1.should.have.status(204);
+
+            const res2 = await chai.request(server)
+                .post('/api/sessions')
+                .send({ "date": "2023-05-02" })
+                .set('Authorization', 'Bearer ' + tokens.ac);
+
+            res2.should.have.status(200);
+            res2.body.should.be.a('object');
+
+            res2.body.should.have.property('session');
+            res2.body.session.should.be.a('object');
+
+            res2.body.session.weekYear.should.eql('18-2023');
+            res2.body.session.dayOfWeek.should.eql(2);
+            res2.body.session.activeDuration.should.eql(123);
+            res2.body.session.inactiveDuration.should.eql(456);
+        });
+
+    });
+
+    describe('GET /:weekYear', () => {
+
+        before(async () => {
+            for (let i = 0; i < 7; i++) {
+                const date = "2023-05-" + (20 + i);
+                await chai.request(server)
+                        .post('/api/sessions')
+                        .send({ "date": date })
+                        .set('Authorization', 'Bearer ' + tokens.ac);
+            }
+        });
+
+        it('gets all sessions in a given week-year if it has sessions', async () => {
+            const res = await chai.request(server)
+                                .get('/api/sessions/20-2023')
+                                .set('Authorization', 'Bearer ' + tokens.ac);
+
+            res.should.have.status(200);
+
+            res.body.should.be.a('object');
+            res.body.should.have.property('sessions');
+            res.body.sessions.should.be.a('array');
+            res.body.sessions.should.have.lengthOf(1);
+
+            res.body.sessions[0].should.be.a('object');
+
+            const res2 = await chai.request(server)
+                                .get('/api/sessions/21-2023')
+                                .set('Authorization', 'Bearer ' + tokens.ac);
+
+            res2.should.have.status(200);
+
+            res2.body.should.be.a('object');
+            res2.body.should.have.property('sessions');
+            res2.body.sessions.should.be.a('array');
+            res2.body.sessions.should.have.lengthOf(6);
+            
+        });
+
+        it('gives out an error if an invalid weekYear is given', (done) => {
+            chai.request(server)
+                .get('/api/sessions/20_2023')
+                .set('Authorization', 'Bearer ' + tokens.ac)
+                .end((err, res) => {
+                    res.should.have.status(400);
+
+                    done();
+                });
+        });
+        
+    });
+});

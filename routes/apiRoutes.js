@@ -1,7 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const fileUpload = require('express-fileupload');
+
 const authController = require('../controllers/authController');
 const sessionsController = require('../controllers/sessionsController');
+const filesController = require('../controllers/filesController');
 const { responseObj } = require('../utils/response');
 
 router.get('/', (_, res) => {
@@ -20,7 +23,11 @@ router.get('/auth-test', (_, res) => {
     res.json(responseObj("You are authenticated!"));
 });
 
-router.post('/sessions/:userId', sessionsController.createSession);
-router.put('/sessions/:userId', sessionsController.updateSession);
+router.use(fileUpload());
+router.use('/files/:userId', filesController);
+
+router.post('/sessions', sessionsController.createSession);
+router.put('/sessions', sessionsController.updateSession);
+router.get('/sessions/:weekYear', sessionsController.getSessionsForWeekYear);
 
 module.exports = router;

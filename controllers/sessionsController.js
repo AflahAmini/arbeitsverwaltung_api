@@ -1,6 +1,6 @@
 const { svr_logger } = require("../utils/logger");
 const { responseObj, errorObj } = require("../utils/response");
-const getWeekYearAndDay = require("../utils/dateUtils");
+const dateUtils = require("../utils/dateUtils");
 const { sessionsTable } = require("./dbController");
 
 // Middleware, creates a session if it does not exist and attaches the session
@@ -9,7 +9,7 @@ const { sessionsTable } = require("./dbController");
 function createSession(request, response) {
     handleExceptions(request, response, (req, res) => {
         const sessionObj = req.body;
-        const weekYearAndDay = getWeekYearAndDay(sessionObj.date);
+        const weekYearAndDay = dateUtils.getWeekYearAndDay(sessionObj.date);
         
         const entry = sessionsTable.getOrAddSession(req.user.id, weekYearAndDay[0], weekYearAndDay[1]);
 
@@ -33,7 +33,7 @@ function createSession(request, response) {
 function updateSession(request, response) {
     handleExceptions(request, response, (req, res) => {
         const sessionObj = req.body;
-        const weekYearAndDay = getWeekYearAndDay(sessionObj.date);
+        const weekYearAndDay = dateUtils.getWeekYearAndDay(sessionObj.date);
 
         const doesExist = !!sessionsTable.getSession(req.user.id, weekYearAndDay[0], weekYearAndDay[1]);
         if (!doesExist)
@@ -46,13 +46,19 @@ function updateSession(request, response) {
     });
 }
 
-// More or less a middleware but idk
-function handleExceptions(req, res, callback) {
-    if (req.params.userId != req.user.id) {
-        res.status(401).json(errorObj("Unauthorized access"));
-        return;
-    }
+// Middleware, gets all the sessions for the user in the specified week-year
+function getSessionsForWeekYear(request, response) {
+    handleExceptions(request, response, (req, res) => {
+        if (!dateUtils.isValidWeekYear(req.params.weekYear))
+            throw new Error('Invalid week year format!')
 
+        const sessions = sessionsTable.getSessionsByWeekYear(req.user.id, req.params.weekYear);
+        res.json({sessions: sessions});
+    });
+}
+
+// More or less a middleware but idk, serves as a framework for all the methods here
+function handleExceptions(req, res, callback) {
     try {
         callback(req, res);
     } catch (err) {
@@ -66,5 +72,6 @@ function handleExceptions(req, res, callback) {
 
 module.exports = {
     createSession,
-    updateSession
+    updateSession,
+    getSessionsForWeekYear
 };
