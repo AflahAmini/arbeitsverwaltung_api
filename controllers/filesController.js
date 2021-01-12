@@ -1,35 +1,64 @@
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
-const root = require('../utils/root');
 const { errorObj, responseObj } = require('../utils/response');
 const { svr_logger } = require('../utils/logger');
 
-module.exports = (req, res) => {
-    if (req.params.userId != req.user.id)
-        return res.status(401).json(errorObj("Unauthorized"));
-    
-    const p = path.join(root, `files\\${req.params.userId}`, req.path);
-
-    (async() => {
-        const stat = await fs.lstat(p);
-
-        if (req.method === 'GET') 
-            await getOrListFiles(res, p, stat);
-        else if (req.method === 'POST')
-            await uploadFiles(req, res, p, stat);
-        else
-            throw new Error("Not found");
-    })().catch((err) => {
-        if (err.code === 'ENOENT') {
-            res.status(404).json(errorObj(`Cannot find file ${req.path} under user's directory`));
-        } else {
-            svr_logger.error(err.message);
-            res.status(404).json(errorObj(err.message));
-        }
-    })
+const calendarDirPath = path.join(__dirname, '..\\files\\calendars');
+if (!fsSync.existsSync(calendarDirPath)) {
+    fsSync.mkdirSync(calendarDirPath);
 }
 
-async function getOrListFiles(res, filepath, stat) {
+module.exports = {
+    handleFiles: (req, res) => {
+        validateAndRun(req, res, async () => {
+            const p = path.join(__dirname, `..\\files\\${req.user.id}`, req.path);
+
+            if (req.method === 'GET')
+                await getOrListFiles(res, p);
+            else if (req.method === 'POST')
+                await uploadFiles(req, res, p);
+            else
+                return res.status(404).json(errorObj('Not found'));
+        }, `Cannot find file/directory ${req.path}`);
+    },
+    getCalendar: (req, res) => {
+        validateAndRun(req, res, async () => {
+            const filename = `${req.params.userId}.json`;
+            const p = path.join(calendarDirPath, filename);
+
+            await getOrListFiles(res, p);
+        }, `Cannot find calendar for user ${req.params.id}`);
+    },
+    postCalendar: (req, res) => {
+        validateAndRun(req, res, async () => {
+            const filename = `${req.params.userId}.json`;
+
+            await uploadFiles(req, res, calendarDirPath, filename);
+        }, `Cannot find calendar directory`);
+    }
+}
+
+// Handles validation and error checking
+function validateAndRun(req, res, callback, notFoundError) {
+    if (req.params.userId != req.user.id)
+        return res.status(401).json(errorObj("Unauthorized"));
+
+    (async () => {
+        await callback();
+    })().catch((err) => {
+        if (err.code === 'ENOENT') {
+            res.status(404).json(errorObj(notFoundError));
+        } else {
+            svr_logger.error(err.stack);
+            res.status(500).json(errorObj(err.message));
+        }
+    });
+}
+
+async function getOrListFiles(res, filepath) {
+    const stat = await fs.lstat(filepath);
+
     if (stat.isFile()) {
         res.sendFile(filepath);
     } else {
@@ -42,7 +71,7 @@ async function getOrListFiles(res, filepath, stat) {
 
             outJson.files.push({
                 name: files[i],
-                lastModified: stats.mtime,
+                lastModified: stats.mtimeMs,
                 isDirectory: isDir
             });
         }
@@ -51,29 +80,31 @@ async function getOrListFiles(res, filepath, stat) {
     }
 }
 
-async function uploadFiles(req, res, dirpath, stat) {
-    if (stat.isFile()) {
-        return res.status(400).json(errorObj("Invalid path"));
+async function uploadFiles(req, res, dirpath, newFilename = "") {
+    if(!fsSync.existsSync(dirpath)) {
+        await fs.mkdir(dirpath, { recursive: true });
     }
-    
-    try {
-        if (!req.files) {
-            res.json(responseObj("No files were uploaded"));
-        } else {
-            let filepaths = [];
-            
-            req.files.toUpload.forEach(file => {
-                file.mv(dirpath + '/' + file.name);
-                filepaths.push(req.path + file.name);
-            });
 
-            res.json({
-                message: `${filepaths.length} files uploaded`,
-                details: filepaths
-            });
+    if (!req.files) {
+        res.json(responseObj("No files were uploaded"));
+    } else {
+        let filepaths = [];
+        const moveFileCallback = (file) => {
+            const filename = newFilename === "" ? file.name : newFilename;
+
+            file.mv(dirpath + '/' + filename);
+            filepaths.push(req.path + '/' + filename);
         }
-    } catch (err) {
-        svr_logger.error(err.stack);
-        res.status(500).json(errorObj(err.message));
+
+        if (Array.isArray(req.files.toUpload)) {
+            req.files.toUpload.forEach(moveFileCallback);
+        } else {
+            moveFileCallback(req.files.toUpload);
+        }
+
+        res.json({
+            message: `${filepaths.length} ${filepaths.length == 1 ? 'file' : 'files'} uploaded`,
+            details: filepaths
+        });
     }
 }

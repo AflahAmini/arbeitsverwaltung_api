@@ -5,17 +5,16 @@ const fs = require('fs');
 const inTesting = process.env.NODE_ENV === 'test';
 let DBSOURCE = ":memory:";
 
-if (inTesting) {
+if (!inTesting) {
     const dbPath = "./db/db.sqlite";
     if (!fs.existsSync(dbPath + '/..')) {
         fs.mkdirSync(dbPath + '/..');
     }
 
     DBSOURCE = dbPath;
-}
-
-if (inTesting)
+} else {
     console.log("Database is in testing mode.");
+}
 
 const db = new Database(DBSOURCE, { verbose: db_logger.info });
 
